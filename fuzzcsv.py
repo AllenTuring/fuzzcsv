@@ -3,12 +3,13 @@ import os.path
 
 version = '1.0.0'
 
+global_filestreams = []
+
 # Given the absolute path of a SQL file
 # Performs a CSV conversion
 def convert(abspath):
 	sql_file_iter = read_file(abspath)
-
-	end_filestream(sql_file_iter)
+	global_filestreams.append(sql_file_iter)
 
 
 ######## MySQL Dump File Parsing ########
@@ -22,23 +23,44 @@ def parse(fs, path):
 
 	for char in fs:
 		read_buffer += char
-		
+
 		read_buffer = read_buffer[-20:] # Keep only last 20 in mem
 
 		# read CREATE TABLE statements
 		if read_buffer[-13:].upper() == "CREATE TABLE ":
-			parse_create_table(fs, tables)
+			parse_create_table(fs, tables, path)
 			read_buffer = "" # reset memory
 
 		# read INSERT INTO statements
 		elif read_buffer[-12:].upper() == "INSERT INTO ":
+			parse_insert_into(fs, tables, path)
 			read_buffer = "" #reset memory
 
 # Parses tokens for the CREATE TABLE statment
-def parse_create_table(fs, tables):
+def parse_create_table(fs, tables, path):
+	tablename = parse_create_table_tablename(fs, tables)
 	print("stub")
 
-def parse_insert_into(fs, tables):
+# Parses the table name for the CREATE TABLE statement
+def parse_create_table_tablename(fs, tables, path):
+	next_token = fs.read(1)
+	if fs.read(1) != "`": # next token better be a name.
+		return -1
+	tablename = ""
+	while next_token != "`": # iterate until name end.
+		if next_token:
+			tablename += next_token
+		else:
+			return -1 # file has terminated early
+	# read success!
+	add_table(fs, tables, path, tablename)
+
+# Adds a new listing to a tables dictionary
+def add_table(fs, tables, path, tablename):
+	tables[tablename] = write_file(writepath(path, tablename))
+
+# Parses tokens for the INSERT INTO statement
+def parse_insert_into(fs, tables, path):
 	print("stub")
 
 
@@ -52,8 +74,9 @@ def write_file(writepath):
 	return open(writepath, "w")
 
 # Closes the filestream fs
-def end_filestream(fs):
-	return fs.close()
+def end_filestreams():
+	for fs in global_filestreams:
+		fs.close()
 
 # Given a SQL file path and the current table name,
 # Generates the proper write path for CSV output
