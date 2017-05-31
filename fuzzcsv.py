@@ -77,6 +77,25 @@ class SQLFilestreamIterator:
 				break;
 		return token # end of file, return last token
 
+	# returns the next token as datum
+	def next_datum(self):
+		datum = ""
+		next_char = self.next_char
+		while next_char:
+			# if the next character is tokenizable, or we are in quote mode and the next char isn't the leading mark,
+			if not next_char == ")" and not next_char == "(" and not next_char == ",":
+				datum += next_char # add it to our token
+			elif datum: # if we can't add the next char to token, but we've written to token
+				return datum.strip() # output
+
+			# iterate
+			try:
+				self.__next__()
+				next_char = self.next_char
+			except StopIteration:
+				break;
+		return datum.strip() # end of file, return last token
+
 	# peeks the next dist chars
 	def peek(self, dist):
 		peek = ""
@@ -159,8 +178,8 @@ class SQLFilestreamIterator:
 		data = []
 		self.seek_char("(")
 		while self.next_char and self.peek_closest(",", ")") == ",":
-			# append the first token
-			data.append(self.next_token())
+			# append the first datum
+			data.append(self.next_datum())
 		return data
 
 	# returns true iff char is a valid tokenizable character (simple alphanum + .)
@@ -168,7 +187,7 @@ class SQLFilestreamIterator:
 		if len(char) != 1:
 			return False
 		ordv = ord(char) # get the ordinal value of this character
-		#           .             0-9                 A-Z                 \              a-z
+		#           .             0-9                 A-Z                  a-z
 		return ordv == 46 or (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
 
 # given a read filestream iterator fsi parses it
