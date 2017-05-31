@@ -9,23 +9,85 @@ global_filestreams = []
 # Given the absolute path of a SQL file
 # Performs a CSV conversion
 def convert(abspath):
-	sql_file_iter = read_file(abspath)
-	global_filestreams.append(sql_file_iter)
+	# Initialize the reader stream for the SQL file
+	sql_filestream = read_file(abspath)
+	sql_fileiterator = SQLFilestreamIterator(sql_filestream)
 
+	parse(sql_fileiterator, abspath)
+
+	# Close all open streams
+	end_filestreams()
 
 ######## MySQL Dump File Parsing ########
-# given a read filestream fs parses it
+
+# Iterator for a filestream
+class SQLFilestreamIterator:
+	# Takes a filestream FS
+	def __init__(self, fs):
+		self.fs = fs
+		self.next_char = fs.read(1)
+		self.quoteread = self.next_char == "`" or self.next_char == "'"
+		self.escape = self.next_char == "\\"
+
+	def __iter__(self):
+		return self
+
+	# returns the next character.
+	def __next__(self):
+		if not self.next_char:
+			raise StopIteration
+		elif self.escape: # no special parsing for next char
+			self.escape = False
+		# special characters section
+		elif self.next_char == "\\":
+			self.escape = True # set explicit mode
+			return self.__next__() # return the next char
+		elif self.next_char == "`" or self.next_char == "'":
+			self.quoteread = not self.quoteread # switch quote mode
+
+		# iterate
+		next_char = self.next_char
+		self.next_char = self.fs.read(1)
+		# output
+		return next_char
+
+	# returns the next token
+	def next_token(self):
+		token = ""
+		next_char = self.next_char
+		while next_char:
+			if __is_tokenizable(next_char) or (self.quoteread and (next_char != "`" or next_char == "'")):
+				token += next_char
+
+			# iterate
+			next_char = self.__next__()
+
+		return token
+
+	# if the cursor is appropriately positioned, returns the next dataset of form (data,data,data...)
+	def next_data(self):
+		data = []
+		return data
+
+	# returns true iff char is a valid tokenizable character (simple alphanum)
+	def __is_tokenizable(char):
+		if len(char) != 1:
+			return False
+		ordv = ord(char) # get the ordinal value of this character
+		#            0-9                 A-Z                 a-z
+		return (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
+
+# given a read filestream iterator fs parses it
 # writes output directly to output based on path
 def parse(fs, path):
 	# Buffer variable for what we've already read
 	read_buffer = ""
 	# Dictionary of tuples of form (tablename, outstream)
 	tables = {}
-
 	for char in fs:
 		read_buffer += char
 
-		read_buffer = read_buffer[-20:] # Keep only last 20 in mem
+		read_buffer = read_buffer[-20:] # Keep only last 20 chars in mem
 
 		# read CREATE TABLE statements
 		if read_buffer[-13:].upper() == "CREATE TABLE ":
@@ -39,40 +101,35 @@ def parse(fs, path):
 
 # Parses tokens for the CREATE TABLE statment
 def parse_create_table(fs, tables, path):
-	tablename = parse_create_table_tablename(fs, tables)
-	print("stub")
+	tablename = parse_create_table_tablename(fs, tables, path)
+	print(tablename)
 
 # Parses the table name for the CREATE TABLE statement
 def parse_create_table_tablename(fs, tables, path):
-	next_token = fs.read(1)
-	if fs.read(1) != "`": # next token better be a name.
-		return -1
-	tablename = ""
-	while next_token != "`": # iterate until name end.
-		if next_token:
-			tablename += next_token
-		else:
-			return -1 # file has terminated early
-	# read success!
-	add_table(fs, tables, path, tablename)
+	print("parse_create_table_tablename stub")
 
 # Adds a new listing to a tables dictionary
 def add_table(fs, tables, path, tablename):
-	tables[tablename] = write_file(writepath(path, tablename))
+	outpath = writepath(path, tablename)
+	tables[tablename] = write_file(outpath)
 
 # Parses tokens for the INSERT INTO statement
 def parse_insert_into(fs, tables, path):
-	print("stub")
+	print("parse_insert_into stub")
 
 
 ########### File Manipulation ###########
 # Iterator for existing SQL file at readpath
 def read_file(readpath):
-	return open(readpath, "r")
+	fs = open(readpath, "r")
+	global_filestreams.append(fs)
+	return fs
 
 # Iterator for new CSV file at writepath
 def write_file(writepath):
-	return open(writepath, "w")
+	fs = open(writepath, "w")
+	global_filestreams.append(fs)
+	return fs
 
 # Closes the filestream fs
 def end_filestreams():
