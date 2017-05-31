@@ -1,5 +1,6 @@
 import sys
 import os.path
+import time
 
 '''
 MySQL dump -> CSV converter for Fuzzworks data dumps
@@ -198,7 +199,8 @@ class SQLFilestreamIterator:
 # given a read filestream iterator fsi parses it
 # writes output directly to output based on path
 def parse(fsi, path):
-	print("\n >> Parsing file", path,)
+	print("\n >> Parsing file", path)
+	start_time = time_millis()
 	# Buffer variable for what we've already read
 	read_buffer = ""
 	# Dictionary of tuples of form (tablename, outstream)
@@ -217,6 +219,13 @@ def parse(fsi, path):
 			parse_insert_into(fsi, tables, path)
 			read_buffer = "" # reset memory
 
+	# end report
+	run_time = time_millis() - start_time
+	table_count, record_count = reset_insert_writelog()
+	print("\n >> Finished parsing file", path, "in", run_time/1000, "seconds.")
+	print("  >> Wrote", record_count, "record(s) in", table_count, "CSV table(s), averaging", round(run_time/record_count, 3), "ms per record.\n")
+
+
 # Parses tokens for the CREATE TABLE statment
 def parse_create_table(fsi, tables, path):
 	# get the table name, right after CREATE TABLE
@@ -225,14 +234,14 @@ def parse_create_table(fsi, tables, path):
 	table_csv_path = writepath(path, tablename)
 	# create the file and adds the listing to the tables dictionary
 	add_table(tables, table_csv_path, tablename)
-	print("  >> Creating table", tablename, "in file", os.path.basename(path), "\n     as", table_csv_path,)
+	print("  >> Creating table", tablename, "in file", os.path.basename(path), "as\n     ", table_csv_path,)
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
 
 	# read headers as token-first datablock
 	headers = fsi.next_headerblock()
 	# write the headers into the filestream
-	print("  >> Adding headers", headers, "\n     to table", tablename, "in file", os.path.basename(table_csv_path))
+	print("  >> Adding headers", ", ".join(headers), "to table", tablename, "in file", os.path.basename(table_csv_path))
 	table_csv_fs.write(join_csv(headers))
 
 # Adds a new listing to a tables dictionary
@@ -242,6 +251,7 @@ def add_table(tables, path, tablename):
 		__throw_quit_badfile(path, " duplicate table " + tablename + " in file.")
 	tables[tablename] = write_file(path)
 
+# dict of tuples of the form tablename : #records
 insert_writelog = {}
 # Parses tokens for the INSERT INTO statement
 def parse_insert_into(fsi, tables, path):
@@ -252,16 +262,28 @@ def parse_insert_into(fsi, tables, path):
 	# get the write path for this table's CSV conversion file (progress message only)
 	table_csv_path = writepath(path, tablename)
 	# start writing datablocks
-	if tablename not in insert_writelog:
+	if tablename not in insert_writelog: #logging block
 		insert_writelog[tablename] = 0
 	datarow = insert_writelog[tablename]
+
 	while fsi.peek_closest("(", ";") != ";": # while there are more datablocks before terminator
 		datarow += 1
 		if not datarow % 10000: # if modulo = 0
 			print("   >> Writing data point #", datarow, "to table", tablename, "in file", os.path.basename(table_csv_path))
 		table_csv_fs.write(join_csv(fsi.next_data()))
-	print("   >> Finished writing ", datarow, " data points to table", tablename, "in file", os.path.basename(table_csv_path))
+
+	print("   >> End of block.", datarow, "data points added to table", tablename, "in file", os.path.basename(table_csv_path), "so far.")
 	insert_writelog[tablename] = datarow
+
+# Resets the Insertion writelog and reports the total number of tables and records written.
+def reset_insert_writelog():
+	table_count = 0
+	record_count = 0
+	for key in insert_writelog:
+		record_count += insert_writelog[key]
+		table_count += 1
+	insert_writelog.clear()
+	return (table_count, record_count)
 
 # Joins a data row for CSV output
 def join_csv(data):
@@ -399,6 +421,9 @@ def __throw_quit_badfile(path, err):
 	__print_err_abort(callname)
 	exit()
 
+# get the system time in ms
+def time_millis():
+	return int(time.time()*1000)
 
 ########### Command Interface ###########
 
