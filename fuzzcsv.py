@@ -32,6 +32,14 @@ def __print_ver():
 def __throw_err_noargs(callname):
 	print("Error: No arguments given. For options, launch as python " + callname + " -help")
 
+# error message for when a bad argument is provided
+def __throw_err_badpath(path, err):
+	print("Error: Bad path '" + path + "', " + err)
+
+# error message for when the program aborts
+def __print_err_abort(callname):
+	print("Aborting. For options, launch as python " + callname + " -help")
+
 
 ########### Command Interface ###########
 
