@@ -12,12 +12,6 @@ def convert(abspath):
 	end_filestream(sql_file_iter)
 
 
-######## MySQL Dump File Parsing ########
-# given a filestream fs searches for valid
-# MySQL CREATE statements
-def search_create(fs):
-
-
 ########### File Manipulation ###########
 # Iterator for existing SQL file at readpath
 def read_file(readpath):
