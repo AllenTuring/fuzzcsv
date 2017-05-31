@@ -4,7 +4,7 @@ import time
 
 '''
 MySQL dump -> CSV converter for Fuzzworks data dumps
-All blame should be attributed to Jennifer Aihaken
+All blame should be attributed to kol.innocence@gmail.com
 '''
 
 version = '1.0.0'
