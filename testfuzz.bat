@@ -1,4 +1,4 @@
-python fuzzcsv.py mapJumps.sql
+python fuzzcsv.py -all
 pause
 start testfuzz.bat
 exit

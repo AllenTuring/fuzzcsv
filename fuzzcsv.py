@@ -351,6 +351,9 @@ def parse_filepath(path):
 # 0 - okay, 1 - is a bad unzip but okay [okay domain: <10]
 # 10 - does not exist, 11 - is a folder
 def valid_filepath(abspath):
+	if not abspath.lower().endswith(".sql"): # if it doesn't end with .sql
+		abspath = abspath + ".sql" # add .sql to the end
+
 	# Let's check if it exists.
 	if not os.path.exists(abspath):
 		return (10, abspath)
@@ -366,8 +369,6 @@ def valid_filepath(abspath):
 			return (11, abspath) # This is a folder and therefore invalid
 
 	# exists, and is a file
-	if not abspath.lower().endswith(".sql"): # if it doesn't end with .sql
-		abspath = abspath + ".sql" # add .sql to the end
 	return (0, abspath) # return the okay path
 
 
@@ -385,12 +386,14 @@ def __print_help():
 	print(" Options:")
 	print("   -help          Prints this helptext.")
 	print("   -ver           Reports the version number.")
+	print("   -all (dir)     Use all valid entries in dir.")
 	print("   -f [files]     Do not abort on bad paths.")
 	print()
 	print(" Usage:")
 	print()
-	print("  python " + callname + " -help/-ver")
-	print("  python " + callname + " (options) [file1] (file2)...")
+	print("  python " + callname + " -help/-ver/-all")
+	print("  python " + callname + " (-f) [file1] (file2)...")
+	print("  python " + callname + " -all (dir1) (dir2)...")
 	print()
 	print(" ---------------------------------------------")
 
@@ -456,13 +459,26 @@ def __shell():
 		if len(args) == 0:
 			__throw_err_noargs()
 
+	# case: all
+	if args[0].lower() == '-all':
+		args = args[1:]
+		force = True
+		if not args:
+			args = os.listdir()
+		else:
+			new_targets = []
+			for arg in args:
+				new_targets.extend(os.listdir(arg))
+			args = new_targets
+
 	# otherwise interpret as .SQL file paths
 	paths = []
 	clean = True
 	for arg in args:
 		fp = parse_filepath(arg)
 		if fp[0] == -1:
-			__throw_err_badpath(arg, fp[1])
+			if not force:
+				__throw_err_badpath(arg, fp[1])
 			clean = False
 		else:
 			paths.append(fp[1])
