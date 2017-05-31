@@ -1,6 +1,11 @@
 import sys
 import os.path
 
+'''
+MySQL dump -> CSV converter for Fuzzworks data dumps
+All blame should be attributed to Jennifer Aihaken
+'''
+
 version = '1.0.0'
 
 callname = "fuzzcsv.py"
