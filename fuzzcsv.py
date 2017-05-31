@@ -204,8 +204,7 @@ def parse(fsi, path):
 	tables = {}
 	for char in fsi:
 		read_buffer += char
-
-		read_buffer = read_buffer[-20:] # Keep only last 20 chars in mem
+		read_buffer = read_buffer[-13:] # Keep only last 13 chars in mem
 
 		# read CREATE TABLE statements
 		if read_buffer[-13:].upper() == "CREATE TABLE ":
@@ -225,13 +224,14 @@ def parse_create_table(fsi, tables, path):
 	table_csv_path = writepath(path, tablename)
 	# create the file and adds the listing to the tables dictionary
 	add_table(tables, table_csv_path, tablename)
-	print("Creating table " + tablename + " in file " + os.path.basename(path) + " as " + table_csv_path)
+	print("> Creating table", tablename, "in file", os.path.basename(path), "\n  as", table_csv_path)
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
 
 	# read headers as token-first datablock
 	headers = fsi.next_headerblock()
 	# write the headers into the filestream
+	print("> Adding headers", headers, "\n  to table", tablename, "in file", os.path.basename(table_csv_path))
 	table_csv_fs.write(join_csv(headers))
 
 # Adds a new listing to a tables dictionary
@@ -241,15 +241,25 @@ def add_table(tables, path, tablename):
 		__throw_quit_badfile(path, " duplicate table " + tablename + " in file.")
 	tables[tablename] = write_file(path)
 
+insert_writelog = {}
 # Parses tokens for the INSERT INTO statement
 def parse_insert_into(fsi, tables, path):
 	# get the table name, right after INSERT INTO
 	tablename = fsi.next_token()
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
+	# get the write path for this table's CSV conversion file (progress message only)
+	table_csv_path = writepath(path, tablename)
 	# start writing datablocks
+	if tablename not in insert_writelog:
+		insert_writelog[tablename] = 0
+	datarow = insert_writelog[tablename]
 	while fsi.peek_closest("(", ";") != ";": # while there are more datablocks before terminator
+		datarow += 1
+		if not datarow % 10000: # if modulo = 0
+			print(">>  Writing data point #", datarow, "to table", tablename, "in file", os.path.basename(table_csv_path))
 		table_csv_fs.write(join_csv(fsi.next_data()))
+	insert_writelog[tablename] = datarow
 
 # Joins a data row for CSV output
 def join_csv(data):
