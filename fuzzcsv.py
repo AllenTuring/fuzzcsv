@@ -198,6 +198,7 @@ class SQLFilestreamIterator:
 # given a read filestream iterator fsi parses it
 # writes output directly to output based on path
 def parse(fsi, path):
+	print("\n >> Parsing file", path,)
 	# Buffer variable for what we've already read
 	read_buffer = ""
 	# Dictionary of tuples of form (tablename, outstream)
@@ -224,14 +225,14 @@ def parse_create_table(fsi, tables, path):
 	table_csv_path = writepath(path, tablename)
 	# create the file and adds the listing to the tables dictionary
 	add_table(tables, table_csv_path, tablename)
-	print("> Creating table", tablename, "in file", os.path.basename(path), "\n  as", table_csv_path)
+	print("  >> Creating table", tablename, "in file", os.path.basename(path), "\n     as", table_csv_path,)
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
 
 	# read headers as token-first datablock
 	headers = fsi.next_headerblock()
 	# write the headers into the filestream
-	print("> Adding headers", headers, "\n  to table", tablename, "in file", os.path.basename(table_csv_path))
+	print("  >> Adding headers", headers, "\n     to table", tablename, "in file", os.path.basename(table_csv_path))
 	table_csv_fs.write(join_csv(headers))
 
 # Adds a new listing to a tables dictionary
@@ -257,7 +258,7 @@ def parse_insert_into(fsi, tables, path):
 	while fsi.peek_closest("(", ";") != ";": # while there are more datablocks before terminator
 		datarow += 1
 		if not datarow % 10000: # if modulo = 0
-			print(">>  Writing data point #", datarow, "to table", tablename, "in file", os.path.basename(table_csv_path))
+			print("   >> Writing data point #", datarow, "to table", tablename, "in file", os.path.basename(table_csv_path))
 		table_csv_fs.write(join_csv(fsi.next_data()))
 	insert_writelog[tablename] = datarow
 
@@ -352,7 +353,7 @@ def valid_filepath(abspath):
 # prints the helptext for -help
 def __print_help():
 	print()
-	print("====== Fuzzworks Data Dump CSV Converter ======")
+	print(" ====== Fuzzworks Data Dump CSV Converter ======")
 	print()
 	print(" Dirty converter for the fuzzworks.co.uk MySQL")
 	print(" data dumps for EVE Online. Output is CSV.")
@@ -368,7 +369,7 @@ def __print_help():
 	print("  python " + callname + " -help/-ver")
 	print("  python " + callname + " (options) [file1] (file2)...")
 	print()
-	print("---------------------------------------------")
+	print(" ---------------------------------------------")
 
 # prints the version for -ver
 def __print_ver():
@@ -376,19 +377,19 @@ def __print_ver():
 
 # error message for when insufficient arguments are provided
 def __throw_err_noargs():
-	print("Error: No arguments given. For options, launch as python " + callname + " -help")
+	print(" !> Error: No arguments given. For options, launch as python " + callname + " -help")
 
 # error message for when a bad argument is provided
 def __throw_err_badpath(path, err):
-	print("Error: Bad path '" + path + "', " + err)
+	print(" !> Error: Bad path '" + path + "', " + err)
 
 # error message for when a file is unparseable.
 def __throw_err_badfile(path, err):
-	print("Error: The file " + path + " cannot be read: " + err)
+	print(" !> Error: The file " + path + " cannot be read: " + err)
 
 # error message for when the program aborts
 def __print_err_abort():
-	print("Aborting. For options, launch as python " + callname + " -help")
+	print(" !> Aborting. For options, launch as python " + callname + " -help")
 
 # termination procedure for bad files
 def __throw_quit_badfile(path, err):
