@@ -3,6 +3,7 @@ import os.path
 
 version = '1.0.0'
 
+callname = "fuzzcsv.py"
 global_filestreams = []
 
 # Given the absolute path of a SQL file
@@ -135,7 +136,7 @@ def valid_filepath(abspath):
 ########## Errors and Helptext ##########
 
 # prints the helptext for -help
-def __print_help(callname):
+def __print_help():
 	print()
 	print("====== Fuzzworks Data Dump CSV Converter ======")
 	print()
@@ -160,16 +161,26 @@ def __print_ver():
 	print("Release " + version)
 
 # error message for when insufficient arguments are provided
-def __throw_err_noargs(callname):
+def __throw_err_noargs():
 	print("Error: No arguments given. For options, launch as python " + callname + " -help")
 
 # error message for when a bad argument is provided
 def __throw_err_badpath(path, err):
 	print("Error: Bad path '" + path + "', " + err)
 
+# error message for when a file is unparseable.
+def __throw_err_badfile(path, err):
+	print("Error: The file " + path + " cannot be read. " + err)
+
 # error message for when the program aborts
-def __print_err_abort(callname):
+def __print_err_abort():
 	print("Aborting. For options, launch as python " + callname + " -help")
+
+# termination procedure for bad files
+def __throw_quit_badfile(path, err):
+	__throw_err_badfile(path, err)
+	end_filestreams()
+	__print_err_abort(callname)
 
 
 ########### Command Interface ###########
@@ -182,12 +193,12 @@ def __shell():
 
 	# case: no arguments
 	if len(args) == 0:
-		__throw_err_noargs(callname)
+		__throw_err_noargs()
 		return
 
 	# case: help flag
 	if args[0].lower() == '-help':
-		__print_help(callname)
+		__print_help()
 		return
 
 	# case: version check
@@ -201,7 +212,7 @@ def __shell():
 		args = args[1:]
 		force = True
 		if len(args) == 0:
-			__throw_err_noargs(callname)
+			__throw_err_noargs()
 
 	# otherwise interpret as .SQL file paths
 	paths = []
@@ -218,7 +229,7 @@ def __shell():
 		for path in paths:
 			convert(path)
 	else:
-		__print_err_abort(callname)
+		__print_err_abort()
 		return
 
 # Execution
