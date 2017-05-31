@@ -260,6 +260,7 @@ def parse_insert_into(fsi, tables, path):
 		if not datarow % 10000: # if modulo = 0
 			print("   >> Writing data point #", datarow, "to table", tablename, "in file", os.path.basename(table_csv_path))
 		table_csv_fs.write(join_csv(fsi.next_data()))
+	print("   >> Finished writing ", datarow, " data points to table", tablename, "in file", os.path.basename(table_csv_path))
 	insert_writelog[tablename] = datarow
 
 # Joins a data row for CSV output
