@@ -56,13 +56,16 @@ class SQLFilestreamIterator:
 		token = ""
 		next_char = self.next_char
 		while next_char:
-			if __is_tokenizable(next_char) or (self.quoteread and (next_char != "`" or next_char == "'")):
-				token += next_char
+			# if the next character is tokenizable, or we are in quote mode and the next char isn't the leading mark,
+			if self.__is_tokenizable(next_char) or (self.quoteread and not (next_char == "`" or next_char == "'")):
+				token += next_char # add it to our token
+			elif token: # if we can't add the next char to token, but we've written to token
+				return token # output
 
 			# iterate
 			next_char = self.__next__()
 
-		return token
+		return token # end of file, return last token
 
 	# if the cursor is appropriately positioned, returns the next dataset of form (data,data,data...)
 	def next_data(self):
@@ -70,51 +73,53 @@ class SQLFilestreamIterator:
 		return data
 
 	# returns true iff char is a valid tokenizable character (simple alphanum)
-	def __is_tokenizable(char):
+	def __is_tokenizable(self, char):
 		if len(char) != 1:
 			return False
 		ordv = ord(char) # get the ordinal value of this character
 		#            0-9                 A-Z                 a-z
 		return (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
 
-# given a read filestream iterator fs parses it
+# given a read filestream iterator fsi parses it
 # writes output directly to output based on path
-def parse(fs, path):
+def parse(fsi, path):
 	# Buffer variable for what we've already read
 	read_buffer = ""
 	# Dictionary of tuples of form (tablename, outstream)
 	tables = {}
-	for char in fs:
+	for char in fsi:
 		read_buffer += char
 
 		read_buffer = read_buffer[-20:] # Keep only last 20 chars in mem
 
 		# read CREATE TABLE statements
 		if read_buffer[-13:].upper() == "CREATE TABLE ":
-			parse_create_table(fs, tables, path)
+			parse_create_table(fsi, tables, path)
 			read_buffer = "" # reset memory
 
 		# read INSERT INTO statements
 		elif read_buffer[-12:].upper() == "INSERT INTO ":
-			parse_insert_into(fs, tables, path)
-			read_buffer = "" #reset memory
+			parse_insert_into(fsi, tables, path)
+			read_buffer = "" # reset memory
 
 # Parses tokens for the CREATE TABLE statment
-def parse_create_table(fs, tables, path):
-	tablename = parse_create_table_tablename(fs, tables, path)
+def parse_create_table(fsi, tables, path):
+	tablename = parse_create_table_tablename(fsi, tables, path)
+	add_table(tables, path, tablename)
 	print(tablename)
 
 # Parses the table name for the CREATE TABLE statement
-def parse_create_table_tablename(fs, tables, path):
+def parse_create_table_tablename(fsi, tables, path):
 	print("parse_create_table_tablename stub")
+	return fsi.next_token()
 
 # Adds a new listing to a tables dictionary
-def add_table(fs, tables, path, tablename):
+def add_table(tables, path, tablename):
 	outpath = writepath(path, tablename)
 	tables[tablename] = write_file(outpath)
 
 # Parses tokens for the INSERT INTO statement
-def parse_insert_into(fs, tables, path):
+def parse_insert_into(fsi, tables, path):
 	print("parse_insert_into stub")
 
 
@@ -139,7 +144,11 @@ def end_filestreams():
 # Given a SQL file path and the current table name,
 # Generates the proper write path for CSV output
 def writepath(readpath, tablename):
-	return readpath[:-4] + " - " + tablename + ".csv"
+	pathname = readpath[:-4]
+	suffix = ".csv"
+	if os.path.basename(pathname) != tablename:
+		suffix = " - " + tablename + suffix
+	return pathname + suffix
 
 
 ############# File Validity #############
