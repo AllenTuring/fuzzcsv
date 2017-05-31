@@ -4,6 +4,8 @@ import os.path
 version = '1.0.0'
 
 callname = "fuzzcsv.py"
+
+# list of tuples in the form (mode, stream)
 global_filestreams = []
 
 # Given the absolute path of a SQL file
@@ -41,7 +43,8 @@ class SQLFilestreamIterator:
 		# special characters section
 		elif self.next_char == "\\":
 			self.escape = True # set explicit mode
-			return self.__next__() # return the next char
+			next_char = self.__next__() # return the next char
+			return (next_char if next_char else "\\") # unless no more
 		elif self.next_char == "`" or self.next_char == "'":
 			self.quoteread = not self.quoteread # switch quote mode
 
@@ -50,6 +53,10 @@ class SQLFilestreamIterator:
 		self.next_char = self.fs.read(1)
 		# output
 		return next_char
+
+	# returns if there is a next char.
+	def has_next(self):
+		return self.next_char != ''
 
 	# returns the next token
 	def next_token(self):
@@ -63,22 +70,98 @@ class SQLFilestreamIterator:
 				return token # output
 
 			# iterate
-			next_char = self.__next__()
-
+			try:
+				self.__next__()
+				next_char = self.next_char
+			except StopIteration:
+				break;
 		return token # end of file, return last token
 
-	# if the cursor is appropriately positioned, returns the next dataset of form (data,data,data...)
-	def next_data(self):
+	# peeks the next dist chars
+	def peek(self, dist):
+		peek = ""
+		# save current toggle values
+		next_char = self.next_char
+		quoteread = self.quoteread
+		escape = self.escape
+		# save the current position
+		stream_posn = self.fs.tell()
+		# write the next few chars
+		while len(peek) < dist and self.next_char:
+			try:
+				peek += self.__next__()
+			except Stopiteration:
+				break;
+		#reset position
+		self.fs.seek(stream_posn)
+		# reset toggle values
+		self.next_char = next_char
+		self.quoteread = quoteread
+		self.escape = escape
+		return peek
+
+	# peeks the next dist tokens as an array
+	def peek_tokens(self, dist):
+		peek = []
+		# save current toggle values
+		next_char = self.next_char
+		quoteread = self.quoteread
+		escape = self.escape
+		# save the current position
+		stream_posn = self.fs.tell()
+		while len(peek) < dist and self.next_char:
+			peek.append(self.next_token())
+		#reset position
+		self.fs.seek(stream_posn)
+		# reset toggle values
+		self.next_char = next_char
+		self.quoteread = quoteread
+		self.escape = escape
+		return peek
+
+	# skip to the next character matching c
+	def seek_char(self, c):
+		while self.next_char and self.next_char != c:
+			self.__next__()
+
+	# skip to the next character matching a member of clist
+	# returns the matching character
+	def seek_char_in(self, clist):
+		while self.next_char and not self.next_char in clist:
+			self.__next__()
+		return self.next_char
+
+	# Returns the next headerblock of form "(name type, name type, name type primary key ..)" in form [name, name, name]
+	def next_headerblock(self):
 		data = []
+		self.seek_char("(")
+		loop = True
+		while self.next_char and " ".join(self.peek_tokens(2)).upper() != "PRIMARY KEY":
+			# append the first token, name
+			data.append(self.next_token())
+			# iterate
+			self.seek_char(",")
 		return data
 
-	# returns true iff char is a valid tokenizable character (simple alphanum)
+	# Returns the next dataset of form "(data,data,data...)" in form [data, data, data]
+	def next_data(self):
+		data = []
+		self.seek_char("(")
+		loop = True
+		while loop:
+			# append the first token
+			data.append(self.next_token())
+			# iterate and check for termination
+			loop = self.seek_char_in([",", ")"]) == ")"
+		return data
+
+	# returns true iff char is a valid tokenizable character (simple alphanum + .)
 	def __is_tokenizable(self, char):
 		if len(char) != 1:
 			return False
 		ordv = ord(char) # get the ordinal value of this character
-		#            0-9                 A-Z                 a-z
-		return (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
+		#           .             0-9                 A-Z                 a-z
+		return ordv == 46 or (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
 
 # given a read filestream iterator fsi parses it
 # writes output directly to output based on path
@@ -104,41 +187,59 @@ def parse(fsi, path):
 
 # Parses tokens for the CREATE TABLE statment
 def parse_create_table(fsi, tables, path):
-	tablename = parse_create_table_tablename(fsi, tables, path)
-	add_table(tables, path, tablename)
-	print(tablename)
+	# get the table name, right after CREATE TABLE
+	tablename = fsi.next_token()
+	# get the write path for this table's CSV conversion file
+	table_csv_path = writepath(path, tablename)
+	# create the file and adds the listing to the tables dictionary
+	add_table(tables, table_csv_path, tablename)
+	print("Creating table " + tablename + " as " + table_csv_path)
+	# get the created CSV write filestream
+	table_csv_fs = tables[tablename]
 
-# Parses the table name for the CREATE TABLE statement
-def parse_create_table_tablename(fsi, tables, path):
-	print("parse_create_table_tablename stub")
-	return fsi.next_token()
+	# read headers as token-first datablock
+	headers = fsi.next_headerblock()
+	# write the headers into the filestream
+	table_csv_fs.write(join_csv(headers))
 
 # Adds a new listing to a tables dictionary
+# Creates the filestream for CSV output for this table
 def add_table(tables, path, tablename):
-	outpath = writepath(path, tablename)
-	tables[tablename] = write_file(outpath)
+	if tablename in tables:
+		__throw_quit_badfile(path, " duplicate table " + tablename + " in file.")
+	tables[tablename] = write_file(path)
 
 # Parses tokens for the INSERT INTO statement
 def parse_insert_into(fsi, tables, path):
 	print("parse_insert_into stub")
 
 
+# Joins a data row for CSV output
+def join_csv(data):
+	return ",".join([d if ("," not in d) else ("\"" + d + "\"") for d in data]) + "\n"
+
 ########### File Manipulation ###########
 # Iterator for existing SQL file at readpath
 def read_file(readpath):
-	fs = open(readpath, "r")
-	global_filestreams.append(fs)
+	try:
+		fs = open(readpath, "r")
+	except OSError:
+		__throw_quit_badfile(readpath, " insufficient access permissions for reading.")
+	global_filestreams.append(("r", fs))
 	return fs
 
 # Iterator for new CSV file at writepath
 def write_file(writepath):
-	fs = open(writepath, "w")
-	global_filestreams.append(fs)
+	try:
+		fs = open(writepath, "w")
+	except OSError:
+		__throw_quit_badfile(readpath, " insufficient access permissions for writing.")
+	global_filestreams.append(("w", fs))
 	return fs
 
 # Closes the filestream fs
 def end_filestreams():
-	for fs in global_filestreams:
+	for mode, fs in global_filestreams:
 		fs.close()
 
 # Given a SQL file path and the current table name,
@@ -236,7 +337,7 @@ def __throw_err_badpath(path, err):
 
 # error message for when a file is unparseable.
 def __throw_err_badfile(path, err):
-	print("Error: The file " + path + " cannot be read. " + err)
+	print("Error: The file " + path + " cannot be read: " + err)
 
 # error message for when the program aborts
 def __print_err_abort():
@@ -247,6 +348,7 @@ def __throw_quit_badfile(path, err):
 	__throw_err_badfile(path, err)
 	end_filestreams()
 	__print_err_abort(callname)
+	exit()
 
 
 ########### Command Interface ###########
