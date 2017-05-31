@@ -1,6 +1,5 @@
 import sys
 import os.path
-import io
 
 version = '1.0.0'
 
@@ -10,6 +9,37 @@ def convert(abspath):
 	sql_file_iter = read_file(abspath)
 
 	end_filestream(sql_file_iter)
+
+
+######## MySQL Dump File Parsing ########
+# given a read filestream fs parses it
+# writes output directly to output based on path
+def parse(fs, path):
+	# Buffer variable for what we've already read
+	read_buffer = ""
+	# Dictionary of tuples of form (tablename, outstream)
+	tables = {}
+
+	for char in fs:
+		read_buffer += char
+		
+		read_buffer = read_buffer[-20:] # Keep only last 20 in mem
+
+		# read CREATE TABLE statements
+		if read_buffer[-13:].upper() == "CREATE TABLE ":
+			parse_create_table(fs, tables)
+			read_buffer = "" # reset memory
+
+		# read INSERT INTO statements
+		elif read_buffer[-12:].upper() == "INSERT INTO ":
+			read_buffer = "" #reset memory
+
+# Parses tokens for the CREATE TABLE statment
+def parse_create_table(fs, tables):
+	print("stub")
+
+def parse_insert_into(fs, tables):
+	print("stub")
 
 
 ########### File Manipulation ###########
