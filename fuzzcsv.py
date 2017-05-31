@@ -80,44 +80,56 @@ class SQLFilestreamIterator:
 	# peeks the next dist chars
 	def peek(self, dist):
 		peek = ""
-		# save current toggle values
-		next_char = self.next_char
-		quoteread = self.quoteread
-		escape = self.escape
-		# save the current position
-		stream_posn = self.fs.tell()
+		# save current position and variables
+		save = self.__peeksave()
 		# write the next few chars
 		while len(peek) < dist and self.next_char:
 			try:
 				peek += self.__next__()
 			except Stopiteration:
 				break;
-		#reset position
-		self.fs.seek(stream_posn)
-		# reset toggle values
-		self.next_char = next_char
-		self.quoteread = quoteread
-		self.escape = escape
+		# reset position and variables
+		self.__peekrestore(save)
 		return peek
 
 	# peeks the next dist tokens as an array
 	def peek_tokens(self, dist):
 		peek = []
+		# save current position and variables
+		save = self.__peeksave()
+		# write the next few tokens
+		while len(peek) < dist and self.next_char:
+			peek.append(self.next_token())
+		# reset position and variables
+		self.__peekrestore(save)
+		return peek
+
+	# peeks to see which of a and b are next closest in the stream.
+	def peek_closest(self, a, b):
+		# save current position and variables
+		save = self.__peeksave()
+		result = self.seek_char_in((a, b))
+		# reset position and variables
+		self.__peekrestore(save)
+		return result
+
+	def __peeksave(self):
 		# save current toggle values
 		next_char = self.next_char
 		quoteread = self.quoteread
 		escape = self.escape
 		# save the current position
 		stream_posn = self.fs.tell()
-		while len(peek) < dist and self.next_char:
-			peek.append(self.next_token())
+
+		return (stream_posn, next_char, quoteread, escape)
+
+	def __peekrestore(self, peeksave):
 		#reset position
-		self.fs.seek(stream_posn)
+		self.fs.seek(peeksave[0])
 		# reset toggle values
-		self.next_char = next_char
-		self.quoteread = quoteread
-		self.escape = escape
-		return peek
+		self.next_char = peeksave[1]
+		self.quoteread = peeksave[2]
+		self.escape = peeksave[3]
 
 	# skip to the next character matching c
 	def seek_char(self, c):
@@ -127,7 +139,7 @@ class SQLFilestreamIterator:
 	# skip to the next character matching a member of clist
 	# returns the matching character
 	def seek_char_in(self, clist):
-		while self.next_char and not self.next_char in clist:
+		while self.next_char and self.next_char not in clist:
 			self.__next__()
 		return self.next_char
 
@@ -135,7 +147,6 @@ class SQLFilestreamIterator:
 	def next_headerblock(self):
 		data = []
 		self.seek_char("(")
-		loop = True
 		while self.next_char and " ".join(self.peek_tokens(2)).upper() != "PRIMARY KEY":
 			# append the first token, name
 			data.append(self.next_token())
@@ -147,12 +158,9 @@ class SQLFilestreamIterator:
 	def next_data(self):
 		data = []
 		self.seek_char("(")
-		loop = True
-		while loop:
+		while self.next_char and self.peek_closest(",", ")") == ",":
 			# append the first token
 			data.append(self.next_token())
-			# iterate and check for termination
-			loop = self.seek_char_in([",", ")"]) == ")"
 		return data
 
 	# returns true iff char is a valid tokenizable character (simple alphanum + .)
@@ -160,7 +168,7 @@ class SQLFilestreamIterator:
 		if len(char) != 1:
 			return False
 		ordv = ord(char) # get the ordinal value of this character
-		#           .             0-9                 A-Z                 a-z
+		#           .             0-9                 A-Z                 \              a-z
 		return ordv == 46 or (47 < ordv < 58) or (64 < ordv < 91) or (96 < ordv < 123)
 
 # given a read filestream iterator fsi parses it
@@ -193,7 +201,7 @@ def parse_create_table(fsi, tables, path):
 	table_csv_path = writepath(path, tablename)
 	# create the file and adds the listing to the tables dictionary
 	add_table(tables, table_csv_path, tablename)
-	print("Creating table " + tablename + " as " + table_csv_path)
+	print("Creating table " + tablename + " in file " + os.path.basename(path) + " as " + table_csv_path)
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
 
@@ -211,8 +219,13 @@ def add_table(tables, path, tablename):
 
 # Parses tokens for the INSERT INTO statement
 def parse_insert_into(fsi, tables, path):
-	print("parse_insert_into stub")
-
+	# get the table name, right after INSERT INTO
+	tablename = fsi.next_token()
+	# get the created CSV write filestream
+	table_csv_fs = tables[tablename]
+	# start writing datablocks
+	while fsi.peek_closest("(", ";") != ";": # while there are more datablocks before terminator
+		table_csv_fs.write(join_csv(fsi.next_data()))
 
 # Joins a data row for CSV output
 def join_csv(data):
