@@ -1,4 +1,4 @@
-python fuzzcsv.py -all
+python fuzzcsv.py -all -o
 pause
-start testfuzz.bat
+start fuzzbump.bat
 exit

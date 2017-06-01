@@ -7,12 +7,22 @@ MySQL dump -> CSV converter for Fuzzworks data dumps
 All blame should be attributed to Serena Noban
 '''
 
-version = '1.0.0'
+version = '1.0.1'
 
 callname = "fuzzcsv.py"
 
+
+################ Globals ################
+
+# default behavior for overwriting files
+# global list of behavior flags
+# (overwrite)
+global_flags = [False]
 # list of tuples in the form (mode, stream)
 global_filestreams = []
+
+
+############ Core Functions #############
 
 # Given the absolute path of a SQL file
 # Performs a CSV conversion
@@ -25,6 +35,7 @@ def convert(abspath):
 
 	# Close all open streams
 	end_filestreams()
+
 
 ######## MySQL Dump File Parsing ########
 
@@ -199,7 +210,7 @@ class SQLFilestreamIterator:
 # given a read filestream iterator fsi parses it
 # writes output directly to output based on path
 def parse(fsi, path):
-	print("\n >> Parsing file", path)
+	print("\n", "="*84, "\n >> Parsing file", path)
 	start_time = time_millis()
 	# Buffer variable for what we've already read
 	read_buffer = ""
@@ -220,10 +231,11 @@ def parse(fsi, path):
 			read_buffer = "" # reset memory
 
 	# end report
-	run_time = time_millis() - start_time
+	run_time = time_millis() - start_time + 1
 	table_count, record_count = reset_insert_writelog()
+	avg_time = run_time/record_count if record_count > 0 else 0
 	print("\n >> Finished parsing file", path, "in", run_time/1000, "seconds.")
-	print("  >> Wrote", record_count, "record(s) in", table_count, "CSV table(s), averaging", round(run_time/record_count, 3), "ms per record.\n")
+	print("  >> Wrote", record_count, "record(s) in", table_count, "CSV table(s), averaging", round(avg_time, 3), "ms per record.\n")
 
 
 # Parses tokens for the CREATE TABLE statment
@@ -234,6 +246,10 @@ def parse_create_table(fsi, tables, path):
 	table_csv_path = writepath(path, tablename)
 	# create the file and adds the listing to the tables dictionary
 	add_table(tables, table_csv_path, tablename)
+	if tablename not in tables:
+		__throw_err_badtable(os.path.basename(path), tablename, "CREATE TABLE")
+		fsi.seek_char(";")
+		return;
 	print("  >> Creating table", tablename, "in file", os.path.basename(path), "as\n     ", table_csv_path,)
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
@@ -241,15 +257,19 @@ def parse_create_table(fsi, tables, path):
 	# read headers as token-first datablock
 	headers = fsi.next_headerblock()
 	# write the headers into the filestream
-	print("  >> Adding headers", ", ".join(headers), "to table", tablename, "in file", os.path.basename(table_csv_path))
+	headerlist = ", ".join(headers)
+	headerlist = headerlist if (len(headerlist) < 36) else (headerlist[:33] + "...") # truncate
+	print("  >> Adding headers", headerlist, "to table", tablename, "in file", os.path.basename(table_csv_path))
 	table_csv_fs.write(join_csv(headers))
 
 # Adds a new listing to a tables dictionary
 # Creates the filestream for CSV output for this table
 def add_table(tables, path, tablename):
 	if tablename in tables:
-		__throw_quit_badfile(path, " duplicate table " + tablename + " in file.")
-	tables[tablename] = write_file(path)
+		__throw_quit_badfileread(path, " duplicate table " + tablename + " in file.")
+	write_filestream = write_file(path)
+	if write_filestream != None:
+		tables[tablename] = write_filestream
 
 # dict of tuples of the form tablename : #records
 insert_writelog = {}
@@ -257,6 +277,10 @@ insert_writelog = {}
 def parse_insert_into(fsi, tables, path):
 	# get the table name, right after INSERT INTO
 	tablename = fsi.next_token()
+	if tablename not in tables:
+		__throw_err_badtable(os.path.basename(path), tablename, "INSERT INTO")
+		fsi.seek_char(";")
+		return;
 	# get the created CSV write filestream
 	table_csv_fs = tables[tablename]
 	# get the write path for this table's CSV conversion file (progress message only)
@@ -295,16 +319,20 @@ def read_file(readpath):
 	try:
 		fs = open(readpath, "r")
 	except OSError:
-		__throw_quit_badfile(readpath, " insufficient access permissions for reading.")
+		__throw_quit_badfileread(readpath, "insufficient access permissions for reading.")
 	global_filestreams.append(("r", fs))
 	return fs
 
 # Iterator for new CSV file at writepath
 def write_file(writepath):
+	# do not overwrite existing files
+	if (not global_flags[0]) and os.path.exists(writepath):
+		__throw_err_badfilewrite(writepath, "file already exists.")
+		return None
 	try:
 		fs = open(writepath, "w")
 	except OSError:
-		__throw_quit_badfile(readpath, " insufficient access permissions for writing.")
+		__throw_quit_badfilewrite(readpath, "insufficient access permissions for writing.")
 	global_filestreams.append(("w", fs))
 	return fs
 
@@ -386,13 +414,16 @@ def __print_help():
 	print(" Options:")
 	print("   -help          Prints this helptext.")
 	print("   -ver           Reports the version number.")
-	print("   -all (dir)     Use all valid entries in dir.")
-	print("   -f [files]     Do not abort on bad paths.")
+	print()
+	print("   -o             Overwrite existing CSV files.")
+	print("   -f             Do not abort on bad paths.")
+	print()
+	print("   -all           Use all valid entries in dir.")
 	print()
 	print(" Usage:")
 	print()
-	print("  python " + callname + " -help/-ver/-all")
-	print("  python " + callname + " (-f) [file1] (file2)...")
+	print("  python " + callname + " -help/-ver")
+	print("  python " + callname + " (-options) [file1] (file2)...")
 	print("  python " + callname + " -all (dir1) (dir2)...")
 	print()
 	print(" ---------------------------------------------")
@@ -403,23 +434,42 @@ def __print_ver():
 
 # error message for when insufficient arguments are provided
 def __throw_err_noargs():
-	print(" !> Error: No arguments given. For options, launch as python " + callname + " -help")
+	print(" !> Error: No files specifed. For helptext, launch as python " + callname + " -help")
+
+# error message for when bad arguments are provided
+def __throw_err_badargs():
+	print(" !> Error: Bad options specifed. For helptext, launch as python " + callname + " -help")
 
 # error message for when a bad argument is provided
 def __throw_err_badpath(path, err):
 	print(" !> Error: Bad path '" + path + "', " + err)
 
 # error message for when a file is unparseable.
-def __throw_err_badfile(path, err):
-	print(" !> Error: The file " + path + " cannot be read: " + err)
+def __throw_err_badfileread(path, err):
+	print(" !> Error: File " + path + " read fail: " + err)
+
+# error message for when a file is unwritable.
+def __throw_err_badfilewrite(path, err):
+	print(" !> Error: File " + path + " write fail: " + err)
+
+# error message for when a file is unwritable.
+def __throw_err_badtable(path, tablename, operation_name):
+	print(" !> Error: Table " + tablename + " is invalid so the operation " + operation_name + " in " + path + " was skipped")
 
 # error message for when the program aborts
 def __print_err_abort():
 	print(" !> Aborting. For options, launch as python " + callname + " -help")
 
-# termination procedure for bad files
-def __throw_quit_badfile(path, err):
-	__throw_err_badfile(path, err)
+# termination procedure for bad file reads
+def __throw_quit_badfileread(path, err):
+	__throw_err_badfileread(path, err)
+	end_filestreams()
+	__print_err_abort(callname)
+	exit()
+
+# termination procedure for bad file writes
+def __throw_quit_badfilewrite(path, err):
+	__throw_err_badfilewrite(path, err)
 	end_filestreams()
 	__print_err_abort(callname)
 	exit()
@@ -451,27 +501,41 @@ def __shell():
 		__print_ver()
 		return
 
-	# case: force flag check
 	force = False
-	if args[0].lower() == '-f':
+	used = []
+	# read flags
+	while (args and args[0].startswith("-")):
+		lead_flag = args[0][1:].lower()
 		args = args[1:]
-		force = True
-		if len(args) == 0:
-			__throw_err_noargs()
 
-	# case: all
-	if args[0].lower() == '-all':
-		args = args[1:]
-		force = True
+		if lead_flag == 'f' and 'f' not in used:
+			used.append('f')
+			force = True
+		elif lead_flag == 'o' and 'o' not in used:
+			used.append('o')
+			global_flags[0] = True
+		elif lead_flag == 'all' and 'all' not in used:
+			used.append('all')
+			force = True
+		else:
+			__throw_err_badargs()
+			return
+
+	# do all substitution last
+	if 'all' in used:
 		if not args:
 			args = os.listdir()
 		else:
 			new_targets = []
 			for arg in args:
 				new_targets.extend(os.listdir(arg))
-			args = new_targets
-
+			args.clear()
+			args.extend(new_targets)
+	
 	# otherwise interpret as .SQL file paths
+	if len(args) == 0:
+		__throw_err_noargs()
+		return;
 	paths = []
 	clean = True
 	for arg in args:
